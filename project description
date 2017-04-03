@@ -1,0 +1,236 @@
+The project is based on MOSI, we add three additional states to eliminate the ping-pang phenomeno. These three states include Exclusive state, Primary clean state, Slave clean state.
+
+Ping pang phenomenon: suppose there are two processors in share states, when one of them write the cache, another copy should be invalidated. Then next time, the other processor want to load, since its cache has been invalidated, so it must issue getS to get the copy. This is ping-pang phenomenon.
+
+Fwd_GetX means forward exlusive request event.
+
+In M state, there is only one data copy, and this copy :
+
+1. Load and store: These two events will not change the state, and only increase the hit number.
+
+2. Fwd_GetX: It becomes to I state, and the cache will send data_exclusive to the requestor
+
+3. Fwd_GetS: It becomes SC state, it also need to write back the data.
+
+In O state:
+The data in this state may be dirty, and there are at least 3 processors share the same data.
+
+1. Load: this event does not change the state, it causes the hit count increase by 1
+
+2. Store: The state becomes M state, it needs to send invalidation request to directory in order to invalidate all other copies.
+
+3. Fwd_GetX: It becomes to I state, it need send data to the requestor in order that the requestor can know how many copies there are.
+
+4. Fwd_Share: It needs to send the data to the requestor, and the state becomes as share state.
+
+
+In E state, this state hold the only copy in all caches, and the data is clean.
+
+1. Load: this event does not change the state, it causes the hit count increase by 1
+
+2. store: It becomes M state, and need not request the invalidation.
+
+3. Fwd_GetX: It becomes I state, and need to send response data to the requestor.
+
+4. Fwd_GetS: The state become SC state.
+
+
+In S state, there are at least three copies of data, and the data may be dirty.
+
+1. Load: this event does not change the state, it causes the hit count increase by 1
+
+2. store: It becomes M state, and it needs to request directory to send invalidations to other copies.
+
+There is no possible for getting fwd_getS and fwd_getX event in this state
+
+
+In PC state, in this state, there are exactly two copies of data, and both of them are clean, and this cache is responsible for reply the data request.
+
+1. Load: It will not change the state, the hit count increases by 1.
+
+2. store: it send update data to SC copy, and write data back to memory.
+
+3. GetS: this state become share state, and it send data to the requestor and notify SC to become share state(send notifyS).
+
+4. Update: It fetches the data from the message
+
+5. GetX: it becomes I state, and need to send invalidation request to direcotry.
+
+
+In SC state:
+
+1. Load: It will not change the state, the hit count increases by 1.
+
+2. store: it send update data to PC, and write data back to memory
+
+3. update: It fetches the data from the message.
+
+4. notifyS: It becomes share state.
+
+In I state:
+
+1. Load: it will issue getS to directory, there are many situations.
+
+1.1
+ when the data is from mememory, if there are no sharers, it become exlusive state else it becomes Own state, 
+
+1.2
+ if the data is from E state or M state or own state, then it become PC state, 
+ else if the data is from PC state, then it becomes own state.
+
+2. store: 
+   this state will become M state, and it request a invalidation to all other copies
+
+
+
+Architecture:
+
+The implemented model in the source code: there are two level cache, and every chip has multiple processors, one processor has one L1 cache, local l2 cache is corresponding to several L1 caches, directory is used globally.
+
+implementation of sending update data in SC and PC state.
+
+First step, send request to directory, then get into transient state.
+
+Second step, waiting for directory response where there is address of the other state, then send data to the specific address.
+
+implementation of u_notifyupdate
+
+1. trigger(Event:GetAddr, in_msg.addr, cache_entry, TBEs[in_msg.addr]);
+
+three states in L2 needed to be considered
+
+OLS, AccessPermission:Read_Only, desc="Owned with local sharers";
+OLSX, AccessPermission:Read_Only, desc="Owned with local sharers, chip is exclusive";
+SLS, AccessPermission:Read_Only, desc="Shared with local sharers";
+
+2.transition({OLS, OLSX, SLS}, GetAddr) {
+    m_notifyUpdate;
+    m_popRequestQueue;
+  }
+
+3.  peek(L1requestNetwork_in, RequestMsg) {
+      enqueue( localRequestNetwork_out, RequestMsg, response_latency ) {
+        out_msg.addr := in_msg.addr;
+        out_msg.Type := CoherenceRequestType:GETS;
+        out_msg.Requestor := in_msg.Requestor;
+        out_msg.RequestorMachine := MachineType:L1Cache;
+        // should randomize this so one node doesn't get abused more than others
+        DirEntry dir_entry := getDirEntry(in_msg.addr);
+        out_msg.Destination.add(dir_entry.Sharers.smallestElement(MachineType:L1Cache));
+        out_msg.MessageSize := MessageSizeType:Forwarded_Control;
+      }
+    }
+
+    action(j_forwardGlobalRequestToLocalOwner, "j", desc="Forward external request to local owner") {
+    peek(requestNetwork_in, RequestMsg) {
+      enqueue( localRequestNetwork_out, RequestMsg, response_latency ) {
+        out_msg.addr := in_msg.addr;
+        out_msg.Type := in_msg.Type;
+        out_msg.Requestor := machineID;
+        out_msg.RequestorMachine := MachineType:L2Cache;
+        out_msg.Destination.add(getLocalOwner(cache_entry, in_msg.addr));
+        out_msg.Type := in_msg.Type;
+        out_msg.MessageSize := MessageSizeType:Forwarded_Control;
+        out_msg.Acks := 0 - 1;
+      }
+    }
+  }
+
+
+
+  else if (getDirectoryEntry(in_msg.addr).Sharers.count() > 0) {
+          enqueue(forwardNetwork_out, RequestMsg, directory_latency) {
+            out_msg.addr := address;
+            out_msg.Type := in_msg.Type;
+            out_msg.Requestor := in_msg.Requestor;
+            out_msg.RequestorMachine := machineIDToMachineType(in_msg.Requestor);
+            out_msg.Destination.addNetDest(getDirectoryEntry(in_msg.addr).Owner);
+            out_msg.Acks := getDirectoryEntry(address).Sharers.count();
+            if (getDirectoryEntry(address).Sharers.isElement(in_msg.Requestor)) {
+              out_msg.Acks := out_msg.Acks - 1;
+            }
+            out_msg.MessageSize := MessageSizeType:Forwarded_Control;
+          }
+        }
+
+
+  d_sendDataToL1GETS // L2 send data directly to L1
+  kk_forwardLocalGETSToLocalOwner // L2 Forward local request to local owner
+  j_forwardGlobalRequestToLocalOwner // L2 forward
+  
+  f_forwardRequest // directory forward the request
+  
+getS, 
+L1 -> L2
+L2 -> another L1
+another L1 reponse data -> L2
+L2 -> L1
+
+implementation of w_writeBackToL2
+
+dd_issuePUTS
+dd_issuePUTO
+d_issuePUTX
+
+implementation of u_fetchData
+
+
+  transition(IFGS, Data, ILO) {
+    i_copyDataToTBE;
+    c_sendDataFromTBEToFwdGETS;
+    s_deallocateTBE;
+    n_popResponseQueue;
+  }
+
+
+
+fetchData
+
+  action(i_copyDataToTBE, "\i", desc="Copy data from response queue to TBE") {
+    peek(responseNetwork_in, ResponseMsg) {
+      assert(is_valid(tbe));
+      tbe.DataBlk := in_msg.DataBlk;
+      tbe.Dirty := in_msg.Dirty;
+      APPEND_TRANSITION_COMMENT(in_msg.Sender);
+    }
+  }
+
+
+     peek(mandatoryQueue_in, RubyRequest) {
+      enqueue(requestNetwork_out, RequestMsg,  request_latency) {
+        out_msg.addr := address;
+        out_msg.Type := CoherenceRequestType:GETS;
+        out_msg.Requestor := machineID;
+        out_msg.RequestorMachine := MachineType:L1Cache;
+        out_msg.Destination.add(mapAddressToRange(address, MachineType:L2Cache,
+              l2_select_low_bit, l2_select_num_bits, intToID(0)));
+        out_msg.MessageSize := MessageSizeType:Request_Control;
+        out_msg.AccessMode := in_msg.AccessMode;
+        out_msg.Prefetch := in_msg.Prefetch;
+      }
+    }
+
+  transition from I in L1 cache
+  a_issueGetS 
+
+  I -> IX
+
+  IX-(PC_Data)->PC this situation happen when l2 cache has only one copy
+  IX-(Own_Data)->O this situation happen when there are already two sharers or more
+  IX-(EX_Data)->E  this situation happen when l2 is also in invalidation state
+
+  Event: L1_PCData
+  Event:L1_OwnData
+
+
+there are many situations in dealing with getS:
+
+the L2 has no copy, l1 has copy  // done
+the L2 has copy, l1 has no copy  // done
+the L2 and L1 both have no copy // in this situation, the requestor id is recorded and issue a global getS, done
+the L1 and L2 all have copy  // in this situation, own owner should be notify, done
+
+
+
+
+action(k_forwardLocalGETSToLocalSharer
