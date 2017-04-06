@@ -455,7 +455,7 @@ machine(MachineType:Directory, "Directory protocol")
           out_msg.Destination.addNetDest(getDirectoryEntry(in_msg.addr).Sharers);
           out_msg.Destination.remove(in_msg.Requestor);
           out_msg.MessageSize := MessageSizeType:Invalidate_Control;
-        } 
+        }
       } else if (getDirectoryEntry(in_msg.addr).Sharers.count() > 0) {
           enqueue(forwardNetwork_out, RequestMsg, directory_latency) {
             out_msg.addr := address;
@@ -468,9 +468,8 @@ machine(MachineType:Directory, "Directory protocol")
               out_msg.Acks := out_msg.Acks - 1;
             }
             out_msg.MessageSize := MessageSizeType:Forwarded_Control;
-          }
         }
-      } 
+      }
     }
   }
 
@@ -860,8 +859,8 @@ machine(MachineType:Directory, "Directory protocol")
     d_sendDataMsg;
     q_popMemQueue;
   }
-  
-  transition({I, S, O, M, IS, SS, OO, MO, MM, MI, MIS, OS, OSS, XI_U, XI_M}, Memory_Ack) {
+
+  transition({I, S, O, M, IS, SS, OO, MO, MM, MI, MIS, OS, OSS, XI_U, XI_M}, GInv) {
     g_sendInvalidations;
     i_popIncomingRequestQueue;
   }
@@ -872,3 +871,4 @@ machine(MachineType:Directory, "Directory protocol")
   }
 
 }
+

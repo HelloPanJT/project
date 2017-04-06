@@ -26,7 +26,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-// in I state, the purpose of getX is to notify the L2 and let L2 invalidate all other 
+// in I state, the purpose of getX is to notify the L2 and let L2 invalidate all other
 // copies in L1
 machine(MachineType:L1Cache, "Directory protocol")
  : Sequencer * sequencer;
@@ -67,7 +67,7 @@ machine(MachineType:L1Cache, "Directory protocol")
     M, AccessPermission:Read_Only, desc="Modified (dirty)";
     E, AccessPermission:Read_Only, desc="Exclusive (clean)";
     PC, AccessPermission:Read_Only, desc="Primary, may be dirty";
-    SC, AccessPermission:Read_Only, desc="Slave, may be dirty"
+    SC, AccessPermission:Read_Only, desc="Slave, may be dirty";
     M_W, AccessPermission:Read_Only, desc="Modified (dirty)";
     MM, AccessPermission:Read_Write, desc="Modified (dirty and locally modified)";
     MM_W, AccessPermission:Read_Write, desc="Modified (dirty and locally modified)";
@@ -83,7 +83,7 @@ machine(MachineType:L1Cache, "Directory protocol")
     IX_I, AccessPermission:Busy, "IX_I", desc="L1 idle, issue getS, saw inv before data because directory does not block on GETS hit";
     IX, AccessPermission:Busy, "IX", desc="L1 idle, issue getS before data";
     PC_W, AccessPermission:Busy, "PC_W", desc="waiting for directory response";
-    SC_W, AccessPermission:Bysy, "SC_W", desc="waiting for directory response";
+    SC_W, AccessPermission:Busy, "SC_W", desc="waiting for directory response";
   }
 
   // EVENTS
@@ -93,7 +93,7 @@ machine(MachineType:L1Cache, "Directory protocol")
     Store,           desc="Store request from the processor";
     L1_Replacement,  desc="Replacement";
     Update,          desc="Update data";
-    Req_Update,      desc="Request update"
+    Req_Update,      desc="Request update";
 
     // Requests
     Own_GETX,      desc="We observe our own GetX forwarded back to us";
@@ -106,6 +106,8 @@ machine(MachineType:L1Cache, "Directory protocol")
     Ack,             desc="Received an ack message";
     Data,            desc="Received a data message, responder has a shared copy";
     Exclusive_Data,  desc="Received a data message";
+    PC_Data,         desc="Received a data message for primary clean copy";
+    Own_Data,        desc="Received a data message for owner";
 
     Writeback_Ack,   desc="Writeback O.K. from directory";
     Writeback_Ack_Data,   desc="Writeback O.K. from directory";
@@ -119,6 +121,8 @@ machine(MachineType:L1Cache, "Directory protocol")
 
     NotifyS,         desc="Notify sharement to the other copy";
     NotifyL,         desc="Notify replacement to the other copy";
+    Notify_SC,         desc="Notify transition to SC state";
+
   }
 
   // TYPES
@@ -338,13 +342,16 @@ machine(MachineType:L1Cache, "Directory protocol")
           trigger(Event:Inv, in_msg.addr,
                   getCacheEntry(in_msg.addr), TBEs[in_msg.addr]);
         } else if (in_msg.Type == CoherenceRequestType:UPDATE) {
-          trigger(Event:Update, in_msg.addr, getCacheEntry(in_msg,addr), 
+          trigger(Event:Update, in_msg.addr, getCacheEntry(in_msg.addr),
                   TBEs[in_msg.addr]);
         } else if (in_msg.Type == CoherenceRequestType:NOTIFYS) {
-          trigger(Event:NotifyS, in_msg.addr, getCacheEntry(in_msg,addr), 
+          trigger(Event:NotifyS, in_msg.addr, getCacheEntry(in_msg.addr),
                   TBEs[in_msg.addr]);
         } else if (in_msg.Type == CoherenceRequestType:NOTIFYL) {
-          trigger(Event:NotifyL, in_msg.addr, getCacheEntry(in_msg,addr), 
+          trigger(Event:NotifyL, in_msg.addr, getCacheEntry(in_msg.addr),
+                  TBEs[in_msg.addr]);
+        } else if (in_msg.Type == CoherenceRequestType:NOTIFYSC) {
+          trigger(Event:Notify_SC, in_msg.addr, getCacheEntry(in_msg.addr),
                   TBEs[in_msg.addr]);
         }
          else {
@@ -529,7 +536,7 @@ machine(MachineType:L1Cache, "Directory protocol")
     }
   }
 
-  action(e_pcsendData, "e", desc="Send data from cache to requestor") {
+  action(e_pcsendData, "epc", desc="Send data from cache to requestor") {
     peek(requestNetwork_in, RequestMsg) {
       assert(is_valid(cache_entry));
       if (in_msg.RequestorMachine == MachineType:L2Cache) {
@@ -566,7 +573,7 @@ machine(MachineType:L1Cache, "Directory protocol")
     }
   }
 
-  action(e_osendData, "e", desc="Send data from cache to requestor") {
+  action(e_osendData, "eo", desc="Send data from cache to requestor") {
     peek(requestNetwork_in, RequestMsg) {
       assert(is_valid(cache_entry));
       if (in_msg.RequestorMachine == MachineType:L2Cache) {
@@ -603,7 +610,7 @@ machine(MachineType:L1Cache, "Directory protocol")
     }
   }
 
-  action(e_sendDataToL2, "ee", desc="Send data from cache to requestor") {
+  action(e_sendData, "e", desc="Send data from cache to requestor") {
     enqueue(responseNetwork_out, ResponseMsg, request_latency) {
       assert(is_valid(cache_entry));
       out_msg.addr := address;
@@ -909,6 +916,21 @@ machine(MachineType:L1Cache, "Directory protocol")
     }
   }
 
+  action(w_writeBackToL2, "\qw", desc="Send data to L2") {
+    enqueue(responseNetwork_out, ResponseMsg, request_latency) {
+      assert(is_valid(tbe));
+      out_msg.addr := address;
+      out_msg.Sender := machineID;
+      out_msg.SenderMachine := MachineType:L1Cache;
+      out_msg.Destination.add(mapAddressToRange(address, MachineType:L2Cache,
+              l2_select_low_bit, l2_select_num_bits, intToID(0)));
+      out_msg.Dirty := false;
+      out_msg.Type := CoherenceResponseType:WRITEBACK_CLEAN_DATA;
+      out_msg.DataBlk := cache_entry.DataBlk;
+      out_msg.MessageSize := MessageSizeType:Writeback_Data;
+    }
+  }
+
   action(s_deallocateTBE, "s", desc="Deallocate TBE") {
     TBEs.deallocate(address);
     unset_tbe();
@@ -986,29 +1008,29 @@ machine(MachineType:L1Cache, "Directory protocol")
   action(zz_recycleMandatoryQueue, "\z", desc="Send the head of the mandatory queue to the back of the queue.") {
     mandatoryQueue_in.recycle(clockEdge(), cyclesToTicks(recycle_latency));
   }
-  
-  action(u_fetchData, "u", desc="fetch data from the update request") {
+
+  action(u_fetchData, "uf", desc="fetch data from the update request") {
     peek(requestNetwork_in, ResponseMsg) {
-      cache_entry.DataBlk=in_msg.DataBlk;
+      cache_entry.DataBlk := in_msg.DataBlk;
     }
   }
 
-  action(ii_notifyUpdate, "\i", desc="send update data to PC or SC") {
-    enqueue(requestNetwork_out, RequestMsg, request_latency)
+  action(ii_notifyUpdate, "\inu", desc="send update data to PC or SC") {
+    enqueue(requestNetwork_out, RequestMsg, request_latency) {
        out_msg.addr := address;
-       out_msg.Type := CoherenceResponseType:FWDDATA;
-       out_msg.Sender := machineID;
-       out_msg.SenderMachine := MachineType:L1Cache;
+       out_msg.Type := CoherenceRequestType:FWDDATA;
+       out_msg.Requestor := machineID;
+       out_msg.RequestorMachine := MachineType:L1Cache;
        out_msg.Destination.add(mapAddressToRange(address, MachineType:L2Cache,
               l2_select_low_bit, l2_select_num_bits, intToID(0)));
        out_msg.DataBlk := cache_entry.DataBlk;
-       out_msg.Dirty := false;
        out_msg.MessageSize := MessageSizeType:Response_Data;
+    }
   }
 
   action(pp_notifyS, "\p", desc="notify SC to transition state to S") {
     enqueue(requestNetwork_out, RequestMsg, request_latency) {
-      out_msg.addr=address;
+      out_msg.addr := address;
       out_msg.Type := CoherenceRequestType:NOTIFYS;
       out_msg.Requestor := machineID;
       out_msg.RequestorMachine := MachineType:L1Cache;
@@ -1020,7 +1042,7 @@ machine(MachineType:L1Cache, "Directory protocol")
 
   action(ps_notifyReplacement, "ps", desc="notify replacement to the other") {
     enqueue(requestNetwork_out, RequestMsg, request_latency) {
-      out_msg.addr=address;
+      out_msg.addr := address;
       out_msg.Type := CoherenceRequestType:NOTIFYL;
       out_msg.Requestor := machineID;
       out_msg.RequestorMachine := MachineType:L1Cache;
@@ -1097,15 +1119,15 @@ machine(MachineType:L1Cache, "Directory protocol")
     uu_profileInstHit;
     k_popMandatoryQueue;
   }
-  
+
   // Transitions from Slave Clean
   transition(SC, Store) {
     ii_notifyUpdate;
     uu_profileDataHit;
     k_popMandatoryQueue;
   }
-  
-  transition(SC, UpDate) {
+
+  transition(SC, Update) {
     u_fetchData;
     l_popForwardQueue;
   }
@@ -1115,7 +1137,7 @@ machine(MachineType:L1Cache, "Directory protocol")
   }
 
   //Transitions from Primary Clean
-  
+
   transition(PC, Store) {
     ii_notifyUpdate;
     uu_profileDataHit;
@@ -1138,7 +1160,7 @@ machine(MachineType:L1Cache, "Directory protocol")
     forward_eviction_to_cpu;
     l_popForwardQueue;
   }
-  
+
   transition({PC, SC}, L1_Replacement, I) {
     i_allocateTBE;
     dd_issuePUTS;
@@ -1151,21 +1173,25 @@ machine(MachineType:L1Cache, "Directory protocol")
     l_popForwardQueue;
   }
 
-  // Transitions from Exclusive 
-  
+  // Transitions from Exclusive
+
   transition(E, Store, M) {
     uu_profileDataHit;
     k_popMandatoryQueue;
   }
-  
+
   transition(E, Fwd_GETX, I) {
     ee_sendDataExclusive;
     forward_eviction_to_cpu;
     l_popForwardQueue;
   }
-  
+
   transition(E, Fwd_GETS, SC) {
     e_sendData;
+    l_popForwardQueue;
+  }
+
+  transition(E, Notify_SC, SC) {
     l_popForwardQueue;
   }
 
@@ -1401,8 +1427,8 @@ machine(MachineType:L1Cache, "Directory protocol")
   }
 
   // Transitions from IX
-  
- 
+
+
   transition(IX, Inv) {
     f_sendAck;
     l_popForwardQueue;
@@ -1426,7 +1452,7 @@ machine(MachineType:L1Cache, "Directory protocol")
     n_popResponseQueue;
   }
 
-  transition(IX, EX_Data, E) {
+  transition(IX, Exclusive_Data, E) {
     u_writeDataToCache;
     m_decrementNumberOfMessages;
     hx_load_hit;

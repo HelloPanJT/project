@@ -72,13 +72,13 @@ In I state:
 1. Load: it will issue getS to directory, there are many situations.
 
 1.1
- when the data is from mememory, if there are no sharers, it become exlusive state else it becomes Own state, 
+ when the data is from mememory, if there are no sharers, it become exlusive state else it becomes Own state,
 
 1.2
- if the data is from E state or M state or own state, then it become PC state, 
+ if the data is from E state or M state or own state, then it become PC state,
  else if the data is from PC state, then it becomes own state.
 
-2. store: 
+2. store:
    this state will become M state, and it request a invalidation to all other copies
 
 
@@ -157,10 +157,10 @@ SLS, AccessPermission:Read_Only, desc="Shared with local sharers";
   d_sendDataToL1GETS // L2 send data directly to L1
   kk_forwardLocalGETSToLocalOwner // L2 Forward local request to local owner
   j_forwardGlobalRequestToLocalOwner // L2 forward
-  
+
   f_forwardRequest // directory forward the request
-  
-getS, 
+
+getS,
 L1 -> L2
 L2 -> another L1
 another L1 reponse data -> L2
@@ -211,7 +211,7 @@ fetchData
     }
 
   transition from I in L1 cache
-  a_issueGetS 
+  a_issueGetS
 
   I -> IX
 
@@ -234,3 +234,44 @@ the L1 and L2 all have copy  // in this situation, own owner should be notify, d
 
 
 action(k_forwardLocalGETSToLocalSharer
+
+
+
+
+
+
+
+
+
+
+
+
+UNSOLVED COMPILATION ISSUES :
+
+MOESI_CMP_directory-L1cache.sm:239: Warning: Non-void return ignored, return type is 'bool'
+MOESI_CMP_directory-L1cache.sm:243: Warning: Non-void return ignored, return type is 'bool'
+MOESI_CMP_directory-L1cache.sm:765: Warning: Non-void return ignored, return type is 'Tick'
+MOESI_CMP_directory-L1cache.sm:773: Warning: Non-void return ignored, return type is 'Tick'
+MOESI_CMP_directory-L1cache.sm:777: Warning: Non-void return ignored, return type is 'Tick'
+MOESI_CMP_directory-L1cache.sm:796: Warning: Non-void return ignored, return type is 'Tick'
+MOESI_CMP_directory-L1cache.sm:989: Warning: Non-void return ignored, return type is 'Scalar'
+MOESI_CMP_directory-L1cache.sm:993: Warning: Non-void return ignored, return type is 'Scalar'
+MOESI_CMP_directory-L1cache.sm:997: Warning: Non-void return ignored, return type is 'Scalar'
+MOESI_CMP_directory-L1cache.sm:1001: Warning: Non-void return ignored, return type is 'Scalar'
+MOESI_CMP_directory-L1cache.sm:960: Warning: Unused action: v_writeDataToCacheVerify, Write data to cache, assert it was same as before
+MOESI_CMP_directory-L2cache.sm:555: Warning: Non-void return ignored, return type is 'bool'
+MOESI_CMP_directory-L2cache.sm:557: Warning: Non-void return ignored, return type is 'bool'
+MOESI_CMP_directory-L2cache.sm:1442: Warning: Non-void return ignored, return type is 'Tick'
+MOESI_CMP_directory-L2cache.sm:1467: Warning: Non-void return ignored, return type is 'Tick'
+MOESI_CMP_directory-L2cache.sm:1471: Warning: Non-void return ignored, return type is 'Tick'
+MOESI_CMP_directory-L2cache.sm:1475: Warning: Non-void return ignored, return type is 'Tick'
+MOESI_CMP_directory-L2cache.sm:1594: Warning: Non-void return ignored, return type is 'Scalar'
+MOESI_CMP_directory-L2cache.sm:1598: Warning: Non-void return ignored, return type is 'Scalar'
+MOESI_CMP_directory-L2cache.sm:1593: Warning: Unused action: w_assertIncomingDataAndCacheDataMatch, Assert that the incoming data and the data in the cache match
+MOESI_CMP_directory-dma.sm:219: Warning: Non-void return ignored, return type is 'Tick'
+MOESI_CMP_directory-dma.sm:223: Warning: Non-void return ignored, return type is 'Tick'
+MOESI_CMP_directory-dma.sm:227: Warning: Non-void return ignored, return type is 'Tick'
+MOESI_CMP_directory-dir.sm:477: Warning: Non-void return ignored, return type is 'Tick'
+MOESI_CMP_directory-dir.sm:481: Warning: Non-void return ignored, return type is 'Tick'
+MOESI_CMP_directory-dir.sm:500: Warning: Non-void return ignored, return type is 'Tick'
+

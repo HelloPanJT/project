@@ -44,10 +44,12 @@ enumeration(CoherenceRequestType, desc="...") {
   WB_ACK_DATA,    desc="Writeback ack";
   WB_NACK,   desc="Writeback neg. ack";
   INV,       desc="Invalidation";
-  FWDDATA,   desc="forwad SC or PC data";
+  FWDDATA,   desc="forward SC or PC data";
   UPDATE,    desc="notify L1 to send update data";
   NOTIFYS,   desc="notify state to change to share";
   NOTIFYL,   desc="notify replacement to the other";
+  NOTIFYSC,   desc="notify transition to SC state";
+  G_INV,      desc="send global invalidations";
   DMA_READ,  desc="DMA Read";
   DMA_WRITE, desc="DMA Write";
 }
@@ -66,7 +68,6 @@ enumeration(CoherenceResponseType, desc="...") {
   PC_DATA,           desc="The data response is going to trigger primary clean state";
   OWN_DATA,          desc="The data response is going to trigger owner state";
   EX_DATA,           desc="The data response is going to trigger exclusive state";
-  G_INV,             desc="send global invalidations";
 }
 
 // TriggerType
